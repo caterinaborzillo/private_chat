@@ -1,0 +1,13 @@
+Ho due moduli principali:
+
+- SERVER: 
+Si comporta come intermediario tra due client. 
+Riceve e conserva tutti i messaggi tra i client in una sorta di database.
+Il database contiene tutte le info e le chat di ogni User (registrato)
+Il database è una struct User che contiene:
+- credenziali dell'utente 
+- la struttura Chat (contenente le chat dell'utente)
+
+- CLIENT: 
+Deve fare il login.
+Non può parlare con un client che non si è registrato (nel database).
