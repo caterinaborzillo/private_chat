@@ -7,3 +7,7 @@
 #define MAXSIZE         1024
 #define SERVER_COMMAND  "quit\n"
 #define FIELDSIZE       30
+#define PASSWORD_MESSAGE "Inserisci password: \n"
+
+void connection();
+void registrazione();
