@@ -9,16 +9,20 @@
 #include <sys/socket.h>
 #include <unistd.h>
 #include <termios.h>
+#include <sys/stat.h>
 
+char curr_username[FIELDSIZE];
 
 User** user;
 int n;
+char primariga[2];
 
 int sockaddr_len, recv_mess_size, ret;
 char buf[MAXSIZE];
 void connection_handler(int socket_desc, struct sockaddr_in* client_addr);
+FILE *f;
 
-void server_routine(int  sock) {
+void udp_server_routine(int  sock) {
     if (DEBUG) fprintf(stderr, "Inizio server\n");
     // inizializzo client_address a 0 
     struct sockaddr_in client_address = {0};
@@ -155,9 +159,8 @@ void connection_handler(int socket_desc, struct sockaddr_in* client_addr) {
         if (recv_bytes == reg_command_len && (memcmp(buf, reg_command, reg_command_len)==0)){
             // registrazione
             registrazione(socket_desc);
-            
-        printf("Registrazione terminata");
-        // fine registrazione
+    
+            // fine registrazione
         }
         // close socket
         ret = close(socket_desc);
@@ -167,193 +170,168 @@ void connection_handler(int socket_desc, struct sockaddr_in* client_addr) {
 
     }
 
+void send_tcp_message(char *buf, int socket_desc) {
+    int bytes_sent=0;
+            buf_len = strlen(buf);
+            while(bytes_sent < buf_len) {
+                ret = send(socket_desc, buf+bytes_sent, 1, 0);
+                if (ret == -1) {
+                    if (errno == EINTR) continue;
+                    handle_error("errore nella send");
+                }     
+                bytes_sent+= ret;
+            }
+}
 
+void recv_tcp_message(char *buf, int socket_desc){
+    memset(buf, 0, buf_len);
+    int recv_bytes = 0;
+    int ret;
+        while(buf[recv_bytes-1] != '\n') {
+            ret = recv(socket_desc, buf+recv_bytes, 1, 0);
+            if (ret == -1) {
+                if (errno == EINTR) continue;
+                handle_error("errore nella recv");
+            }
+            if (ret == 0) break;
+            recv_bytes+= ret;
+        }
+}
+
+// funzione che stampa tutti gli utenti iscritti (per iniziare a messaggiare con uno di loro)
+void stampa_utenti(char* curr_username, int socket_desc) {
+    memset(buf, 0, buf_len);
+            sprintf(buf, "Lista di tutti gli utenti: \n");
+            send_tcp_message(buf, socket_desc);
+    for (int j=0; j < n; j++) {
+        if (strcmp(user[j]->username, curr_username)!=0) {
+            memset(buf, 0, buf_len);
+            sprintf(buf, (char*)user[j]->username);
+            send_tcp_message(buf, socket_desc);
+        if (DEBUG) fprintf(stderr, "messaggio da inviare al client: %s ...\n",buf);
+        }
+    }
+}
+
+// ritorna 1 se è presente ritona 0 se il nome non è presente (cioè non si era regisrato)
+int database_research(char* username, char* password){
+    int i; 
+    for (i=0; i<n; i++) {
+        if (DEBUG) fprintf(stderr, "username : %s \n", username);
+        if (DEBUG) fprintf(stderr, "password : %s \n", password);
+        if (DEBUG) fprintf(stderr, "user[%d]->username : %s \n", i, user[i]->username);
+        if (DEBUG) fprintf(stderr, "user[%d]->password : %s \n", i, user[i]->password);
+
+        if ((!strcmp(user[i]->username,username)) && (!strcmp(user[i]->password,password))) {
+            return 1;
+        }
+    }
+    
+    return 0;
+}
+
+// chiama login
 void registrazione(int socket_desc) {
             User* u = malloc(sizeof(User));
-            u->nome = malloc(FIELDSIZE*sizeof(char));
-            u->username = malloc(FIELDSIZE*sizeof(char));
-            u->password = malloc(FIELDSIZE*sizeof(char));
-            n++;
-            user[n] = u;
+            u->nome = malloc(FIELDSIZE);
+            u->username = malloc(FIELDSIZE);
+            u->password = malloc(FIELDSIZE);
 
-            int recv_bytes;
             memset(buf, 0, buf_len);
             // nome e cognome
             sprintf(buf, "Inserisci nome e cognome: \n");
-            int bytes_sent=0;
-            buf_len = strlen(buf);
-            while(bytes_sent < buf_len) {
-                ret = send(socket_desc, buf+bytes_sent, 1, 0);
-                if (ret == -1) {
-                    if (errno == EINTR) continue;
-                    handle_error("errore nella send");
-                }     
-                bytes_sent+= ret;
-            }
+            send_tcp_message(buf, socket_desc);
+
         if (DEBUG) fprintf(stderr, "messaggio da inviare al client: %s ...\n",buf);
 
-        memset(buf, 0, buf_len);
-        recv_bytes = 0;
-
-        int ret;
-        while(buf[recv_bytes-1] != '\n') {
-            ret = recv(socket_desc, buf+recv_bytes, 1, 0);
-            if (ret == -1) {
-                if (errno == EINTR) continue;
-                handle_error("errore nella recv");
-            }
-            if (ret == 0) break;
-            recv_bytes+= ret;
-        }
-        if (DEBUG) fprintf(stderr, "Received name of %d bytes: %s \n",recv_bytes, buf);
+        recv_tcp_message(buf,socket_desc);
+        if (DEBUG) fprintf(stderr, "Received name : %s \n", buf);
         memcpy(u->nome, buf, strlen(buf)-1);
 
-        if (DEBUG)fprintf(stderr, "Nome in array: %s \n", user[n]->nome);
 
         // username 
         memset(buf, 0, buf_len);
-            sprintf(buf, "Inserisci username: \n");
-            bytes_sent=0;
-            buf_len = strlen(buf);
-            while(bytes_sent < buf_len) {
-                ret = send(socket_desc, buf+bytes_sent, 1, 0);
-                if (ret == -1) {
-                    if (errno == EINTR) continue;
-                    handle_error("errore nella send");
-                }
-                bytes_sent+= ret;
-            }
-        memset(buf, 0, buf_len);
-        recv_bytes = 0;
-        while(buf[recv_bytes-1] != '\n') {
-            ret = recv(socket_desc, buf+recv_bytes, 1, 0);
-            if (ret == -1) {
-                if (errno == EINTR) continue;
-                handle_error("errore nella recv");
-            }
-            if (ret == 0) break;
-            recv_bytes+= ret;
-        }
-        if (DEBUG) fprintf(stderr, "Received username of %d bytes: %s \n",recv_bytes, buf);
+        sprintf(buf, "Inserisci username: \n");
+        send_tcp_message(buf, socket_desc);
+
+        recv_tcp_message(buf,socket_desc);
+
+        if (DEBUG) fprintf(stderr, "Received username : %s \n", buf);
         memcpy(u->username, buf, strlen(buf)-1);
 
         memset(buf, 0, buf_len);
-            sprintf(buf, "Inserisci password: \n");
-            bytes_sent=0;
-            buf_len = strlen(buf);
-            while(bytes_sent < buf_len) {
-                ret = send(socket_desc, buf+bytes_sent, 1, 0);
-                if (ret == -1) {
-                    if (errno == EINTR) continue;
-                    handle_error("errore nella send");
-                }
-                bytes_sent+= ret;
-            }
-        memset(buf, 0, buf_len);
-        recv_bytes = 0;
-        while(buf[recv_bytes-1] != '\n') {
-            ret = recv(socket_desc, buf+recv_bytes, 1, 0);
-            if (ret == -1) {
-                if (errno == EINTR) continue;
-                handle_error("errore nella recv");
-            }
-            if (ret == 0) break;
-            recv_bytes+= ret;
-        }
-        if (DEBUG) fprintf(stderr, "Received password of %d bytes: %s\n",recv_bytes, buf);
+        sprintf(buf, "Inserisci password: \n");
+        send_tcp_message(buf, socket_desc);
+
+        recv_tcp_message(buf,socket_desc);
+
+        if (DEBUG) fprintf(stderr, "Received password : %s\n", buf);
         memcpy(u->password, buf, strlen(buf)-1);
 
-        memset(buf, 0, buf_len);
-            sprintf(buf, "Registrazione effettuata. Ora premi 'invio' ed effettua il login! \n");
-            bytes_sent=0;
-            buf_len = strlen(buf);
-            while(bytes_sent < buf_len) {
-                ret = send(socket_desc, buf+bytes_sent, 1, 0);
-                if (ret == -1) {
-                    if (errno == EINTR) continue;
-                    handle_error("errore nella send");
-                }
-                bytes_sent+= ret;
-            }
-        if (DEBUG) fprintf(stderr, "struct dello user: %s %s %s", u->nome, u->username, u->password);
+        if (DEBUG) fprintf(stderr, "struct dello user:%s %s %s\n", u->nome, u->username, u->password);
         // conferma di registrazione
         memset(buf, 0, buf_len);
-            sprintf(buf, "Vuoi confermare i tuoi dati? digita 'si' per confermare oppure 'no' per rieffettuare la registrazione.\n");
-            bytes_sent=0;
-            buf_len = strlen(buf);
-            while(bytes_sent < buf_len) {
-                ret = send(socket_desc, buf+bytes_sent, 1, 0);
-                if (ret == -1) {
-                    if (errno == EINTR) continue;
-                    handle_error("errore nella send");
-                }
-                bytes_sent+= ret;
-            }
-        memset(buf, 0, buf_len);
-        recv_bytes = 0;
-        while(buf[recv_bytes-1] != '\n') {
-            ret = recv(socket_desc, buf+recv_bytes, 1, 0);
-            if (ret == -1) {
-                if (errno == EINTR) continue;
-                handle_error("errore nella recv");
-            }
-            if (ret == 0) break;
-            recv_bytes+= ret;
-        }
+        sprintf(buf, "Vuoi confermare i tuoi dati? digita 'si' per confermare oppure 'no' per rieffettuare la registrazione.\n");
+        send_tcp_message(buf, socket_desc);
+
+        recv_tcp_message(buf,socket_desc);
         if (DEBUG) fprintf(stderr, "Received answer: %s\n", buf);
         
         if (memcmp(buf, "no", strlen("no"))==0){
+            free(u->nome);
+            free(u->username);
+            free(u->password);
+            free(u);
             registrazione(socket_desc);
         
-        } else login(socket_desc);
+        } else if (memcmp(buf, "si", strlen("si"))==0){    
+                    n++;
+                    // salvo tutti i dati nel file database.txt in modo tale da conservarmi le informazioni degli utenti iscritti
+                    f = fopen("database.txt", "a+");
+                    if (f == NULL) { handle_error("Impossibile aprire il file"); }
+                    // n è il numero di utenti 
+                    if (DEBUG) fprintf(stderr, "valore di n: %d \n", n);
+                    //fseek(f, 0, SEEK_SET);
+                    //sprintf(primariga, "%d", n);answ
+                    //int fd = fileno(f);
+                    //int nu = (char)n;
+                    //fputc(n, f);
+                    //if (DEBUG) fprintf(stderr, "primariga: %s \n", primariga);
+                    //fputs(primariga, f);
+                    //fseek(f, 0, SEEK_END);
+                    fprintf(f, "%s,%s,%s\n", u->nome, u->username, u->password);
+                    fclose(f);
+                    user[n] = u;
+                    memset(buf, 0, buf_len);
+                    sprintf(buf, "Registrazione effettuata. Ora premi 'invio' ed effettua il login! \n");
+                    send_tcp_message(buf, socket_desc);
+                    recv_tcp_message(buf, socket_desc);
+            login(socket_desc);
+        }
 }
 
+
 void login(int socket_desc) {
+        char* username = malloc(FIELDSIZE);
+        char* password = malloc(FIELDSIZE);
         int recv_bytes;
             memset(buf, 0, buf_len);
             // username
-            sprintf(buf, "Inserisci username: \n");
-            int bytes_sent=0;
-            buf_len = strlen(buf);
-            while(bytes_sent < buf_len) {
-                ret = send(socket_desc, buf+bytes_sent, 1, 0);
-                if (ret == -1) {
-                    if (errno == EINTR) continue;
-                    handle_error("errore nella send");
-                }     
-                bytes_sent+= ret;
-            }
+            sprintf(buf, "Inserisci username: \n");     
+            send_tcp_message(buf, socket_desc);
 
-        memset(buf, 0, buf_len);
-        recv_bytes = 0;
-
-        int ret;
-        while(buf[recv_bytes-1] != '\n') {
-            ret = recv(socket_desc, buf+recv_bytes, 1, 0);
-            if (ret == -1) {
-                if (errno == EINTR) continue;
-                handle_error("errore nella recv");
-            }
-            if (ret == 0) break;
-            recv_bytes+= ret;
-        }
-        if (DEBUG) fprintf(stderr, "Received username of %d bytes: %s \n",recv_bytes, buf);
+        recv_tcp_message(buf, socket_desc);
+        if (DEBUG) fprintf(stderr, "Received username : %s \n",buf);    
+        memcpy(username, buf, strlen(buf)-1);
+        if (DEBUG) fprintf(stderr, "strlen(buf) %ld: \n",strlen(buf)-1);
 
         // password
         memset(buf, 0, buf_len);
             sprintf(buf, "Inserisci password: \n");
-            bytes_sent=0;
-            buf_len = strlen(buf);
-            while(bytes_sent < buf_len) {
-                ret = send(socket_desc, buf+bytes_sent, 1, 0);
-                if (ret == -1) {
-                    if (errno == EINTR) continue;
-                    handle_error("errore nella send");
-                }
-                bytes_sent+= ret;
-            }
-        memset(buf, 0, buf_len);
-        recv_bytes = 0;
+            send_tcp_message(buf, socket_desc);
+            memset(buf, 0, buf_len);
+            recv_bytes = 0;
+            int ret;
         while(buf[recv_bytes-1] != '\n') {
             ret = recv(socket_desc, buf+recv_bytes, 1, 0);
             if (ret == -1) {
@@ -363,7 +341,7 @@ void login(int socket_desc) {
             if (ret == 0) break;
             recv_bytes+= ret;
         }
-        while(buf[recv_bytes-1] != '\n') {
+        while(buf[recv_bytes-1] != '\n'){
             ret = recv(socket_desc, buf+recv_bytes, 1, 0);
             if (ret == -1) {
                 if (errno == EINTR) continue;
@@ -371,30 +349,135 @@ void login(int socket_desc) {
             }
             if (ret == 0) break;
             recv_bytes+= ret;
-        }
-        if (DEBUG) fprintf(stderr, "Received password of %d bytes: %s \n",recv_bytes, buf);
+        } 
+        
+        if (DEBUG) fprintf(stderr, "Received password: %s \n", buf);
+        memcpy(password, buf, strlen(buf)-1);
 
+        if (database_research(username,password)){
         memset(buf, 0, buf_len);
-            sprintf(buf, "Login effettuata. Puoi iniziare ora! \n");
-            bytes_sent=0;
-            buf_len = strlen(buf);
-            while(bytes_sent < buf_len) {
-                ret = send(socket_desc, buf+bytes_sent, 1, 0);
-                if (ret == -1) {
-                    if (errno == EINTR) continue;
-                    handle_error("errore nella send");
-                }
-                bytes_sent+= ret;
-            }
-
+            sprintf(buf, "Login effettuato. Puoi iniziare ora! \n");
+            send_tcp_message(buf, socket_desc);
+            memcpy(curr_username, username, strlen(username));
+            stampa_utenti(curr_username, socket_desc);
+        // !!!!!!!!!!!!!!!!!!!!
         // funzione che scambia messaggi con gli altri client
+        } else {
+            memset(buf, 0, buf_len);
+            sprintf(buf, "Credenziali errate, prego rieffettuare il login. \n");
+            send_tcp_message(buf, socket_desc);
+            recv_tcp_message(buf, socket_desc);
+            login(socket_desc);
+        }
+        free(username);
+        free(password);
 }
 
 
 
+/*
+ * Check if a file exist using stat() function
+ * return 1 if the file exist otherwise return 0
+ */
+int fileexists(const char* filename){
+    struct stat buffer;
+    int exist = stat(filename,&buffer);
+    if(exist == 0)
+        return 1;
+    else // -1
+        return 0;
+}
+
 int main(int args, char* argv[]) {
-    n = -1;
+    User* u;
+    char *p;
+    char line[200];
+    char* res;
     user = malloc(15*sizeof(User));
+    memset(line, 0, strlen(line));
+    //se il file NON esiste
+    if (fileexists("database.txt")==0) {
+        n = 0;
+        // creo / apro il file in lettura e scrittura 
+        f = fopen("database.txt", "a+");
+        if (f == NULL) {
+            handle_error("Impossibile aprire il file");
+        }
+        // scrivo sul file che sono presenti 0 utenti iscritti
+        fprintf(f, "%d\n", n);
+        fclose(f);
+    }
+    else { // se il file ESISTE
+        // apro il file in lettura e scrittura 
+        f = fopen("database.txt", "r+");
+        if (f == NULL) { handle_error("Impossibile aprire il file"); }
+        int i = 0, num = 0;
+        while (1){
+            int j = 0;
+            if (i==0) {
+                // prima riga
+                res = fgets(line, 200, f);
+                if (res == NULL) break;
+                n = atoi(line);
+                user = (User**)malloc(10*sizeof(User*));
+                i++;
+            } else { // altre righe con i dati
+            res = fgets(line, 200, f);
+            if (res == NULL) break;
+            p = strtok(line, ",");
+            while(p!=NULL) {
+                if (j==0) { // nome
+                    u = malloc(sizeof(User));
+                    u->nome = malloc(FIELDSIZE*sizeof(char));
+                    if(p[ strlen(p) - 1]== '\n'){
+                        char* temp = malloc(strlen(p));
+                        memcpy(temp, p, strlen(p)-1);
+                        memcpy(u->nome, temp, strlen(temp));
+                        free(temp);
+                    }
+                    else{
+                        memcpy(u->nome, p, strlen(p));
+                    }
+                    if (DEBUG) fprintf(stderr, "u->nome %s\n", u->nome);
+                }
+                else if (j==1) { // username
+                    u->username = malloc(FIELDSIZE*sizeof(char));
+                    if(p[ strlen(p) - 1]== '\n'){
+                        char* temp = malloc(strlen(p));
+                        memcpy(temp, p, strlen(p)-1);
+                        memcpy(u->username, temp, strlen(temp));
+                        free(temp);
+                    }
+                    else{
+                        memcpy(u->username, p, strlen(p));
+                    }
+                                      
+                    if (DEBUG) fprintf(stderr, "u->username %s\n", u->username);
+                } 
+                else { // password
+                    u->password = malloc(FIELDSIZE*sizeof(char));
+                    if(p[ strlen(p) - 1]== '\n'){
+                        char* temp = malloc(strlen(p));
+                        memcpy(temp, p, strlen(p)-1);
+                        memcpy(u->password, temp, strlen(temp));
+                         free(temp);
+                    }
+                    else{
+                        memcpy(u->password, p, strlen(p));
+
+                    }
+                if (DEBUG) fprintf(stderr, "u->password %s\n", u->password);
+                    user[num] = u;
+                    num++;
+                }
+                p = strtok(NULL, ",");
+                j++;
+            }
+            }
+        }   
+        n = num;
+    }
+    
     // come prima cosa il server deve essere in attesa di effettuare il login o la registrazione
     // quindi prima si mette in attesa e poi effettua login e/o registrazione
     connessione();
@@ -421,7 +504,7 @@ int main(int args, char* argv[]) {
 
     // devo gestire la ricezione dei messaggi 
 
-    server_routine(sock);
+    udp_server_routine(sock);
 
     ret = close(sock);
     if (ret) handle_error("Cannot close socket");
