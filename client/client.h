@@ -4,7 +4,7 @@
 #define DEBUG           1   // display debug messages
 #define SERVER_PORT     6000
 #define SERVER_ADDRESS  "127.0.0.1"
-#define MAXSIZE         1024
+#define MAXSIZE         5000
 #define SERVER_COMMAND  "quit\n"
 #define FIELDSIZE       30
 #define PASSWORD_MESSAGE "Inserisci password: \n"

@@ -9,8 +9,11 @@
 #include <sys/socket.h>
 #include <unistd.h>
 #include <termios.h>
-#define MAXPW 32
+#include <pthread.h>
 
+#define MAXPW 32
+int socket1;
+int socket2;
 int sock;
 char message[MAXSIZE];
 char buf[MAXSIZE];
@@ -20,6 +23,8 @@ struct sockaddr_in from_addr;
 unsigned int from_size;
 char* quit_command = SERVER_COMMAND;
 int quit_command_len = strlen(SERVER_COMMAND);
+int k=0;
+struct sockaddr_in server_addr_udp = {0};
 
 char buf2[FIELDSIZE];
 int n = 0;
@@ -29,88 +34,57 @@ char *p = pw;
 
 ssize_t getpasswd (char **pw, size_t sz, int mask, FILE *fp);
 
+void invio_ricezione_messaggi(struct sockaddr_in server_addr_udp, int sock);
 
-int main(int args, char* argv[]) {
 
-    // registrazione - login 
-    //printf("Ciao! Benvenuto sul sistema di messaggistica più comoda e più veloce di sempre!\n Prima di iniziare per favore registrati sulla piattaforma con i tuoi dati personali. \n Digita 'login' per effettuare il login con le tue credenziali o 'registrazione' per iscriverti: ");
-        connection();
-        //registrazione();
-        /*
-        n++;
-        printf("Nome: ");
-        fgets(user[n].nome, FIELDSIZE, stdin); 
-
-        printf("Cognome: ");
-        fgets(user[n].cognome, FIELDSIZE, stdin);
-
-        printf("Username: ");
-        fgets(user[n].username, FIELDSIZE, stdin);
-
-        memset(buf2, 0, FIELDSIZE);
-        printf("Email: ");
-        fgets(user[n].email, FIELDSIZE, stdin);
-
-        memset(buf2, 0, FIELDSIZE);
-        printf("Password: ");
-        nchr = getpasswd(user[n].password, FIELDSIZE, '*', stdin);
-        printf ("\nYou entered: %s  (%zu chars)\n", user[n].password, nchr);
-        
-        printf("Vuoi confermare? si/no");
-        fgets(buf, FIELDSIZE, stdin);
-        if (strcmp(buf, "si")==0) {
-            printf("Registrazione effettuata con successo! ");
-            // funzione login
-            printf("\nUser numero %d.\nNome: %s\tCognome: %s\t Email: %s \n Username: %s",n,user[n].nome, user[n].cognome, user[n].email, user[n].username);
-        } else if (strcmp(buf, "no")==0) {
-            memset(user[n].nome, 0, FIELDSIZE); //???
-            memset(user[n].cognome, 0, FIELDSIZE);
-            memset(user[n].username, 0, FIELDSIZE);
-            memset(user[n].email, 0, FIELDSIZE);
-            memset(user[n].password, 0, FIELDSIZE);
-            n--;
-            printf("Registrazione non avvenuta. Riprova digitando 'registrazione'");
-        }
-    else printf("Per favore digita 'login' per effettuare il login con le tue credenziali o 'registrazione' per iscriverti: \n ");
-    }
-    */
+void invio_ricezione_messaggi(struct sockaddr_in server_addr_udp, int sock){
+    if (DEBUG) fprintf(stderr, "Pronto thread disponibile a mandare messaggi\n");
+    if (DEBUG) fprintf(stderr, "Pronto thread disponibile a ricevere messaggi\n");
     while(1) {
     
     memset(message, 0, MAXSIZE);
     fgets(message, MAXSIZE, stdin);
+    if (DEBUG) fprintf(stderr, "porta in send %d\n", server_addr_udp.sin_port);
     if ((message_length = strlen(message)) > MAXSIZE) handle_error("messaggio troppo lungo");
 
-    sock = socket(AF_INET, SOCK_DGRAM, 0);
-    if (sock < 0) handle_error("creazione socket client fallita");
-
-    // costruisco indirizzo del server
-    struct sockaddr_in server_address = {0};
-    server_address.sin_family = AF_INET;
-    server_address.sin_port = htons(SERVER_PORT);
-    server_address.sin_addr.s_addr = inet_addr(SERVER_ADDRESS);
-
-    // invio messaggio al server
-    ret = sendto(sock, message, message_length, 0, (struct sockaddr*) &server_address, sizeof(server_address));
-    if (ret != message_length) handle_error("errore messaggio troppo lungo");
-
-    // dopo il quit command non riceveremo nessun comando dal server, quindi possiamo
-    // uscire dal loop
-    if (message_length == quit_command_len && !memcmp(message, quit_command, quit_command_len)) break;
-
-    // ritorno del messaggio dal server
+    // invio messaggi al server
+    ret = sendto(sock, message, message_length, 0, ( struct sockaddr*) &server_addr_udp, sizeof(server_addr_udp));
+    if (ret != message_length) handle_error("sendto errore messaggio troppo lungo\n");
+    
+    // ricezione messaggi
     from_size = sizeof(from_addr);
     memset(buf, 0, MAXSIZE);
 
-    ret = recvfrom(sock, buf, MAXSIZE, 0, (struct sockaddr*) &from_addr, &from_size);
+    ret = recvfrom(sock, buf, MAXSIZE, 0, ( struct sockaddr*) &from_addr, &from_size);
+    if (DEBUG) fprintf(stderr, "dopo recvfrom!\n");
     // controllo 
-    if (server_address.sin_addr.s_addr != from_addr.sin_addr.s_addr) handle_error("messaggio ricevuto da una sorgente ignota");
+    if (server_addr_udp.sin_addr.s_addr != from_addr.sin_addr.s_addr) handle_error("messaggio ricevuto da una sorgente ignota");
     buf[ret] = '\0';
     printf("Received: %s\n", buf);
+
+    }
+    
+    return;
 }
+
+
+
+
+
+int main(int args, char* argv[]) {
+
+    // registrazione - login 
+    connection();
+
+    int sock;
+    sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (sock < 0) handle_error("creazione socket client fallita");
+    ret = bind(sock, (struct sockaddr*) &server_addr_udp, sizeof(struct sockaddr_in));
+    invio_ricezione_messaggi(server_addr_udp, sock);
     ret = close(sock);
     if (ret) handle_error("Cannot close socket");
-    return 0;
 
+    return 0;
 }
 
 #define MAXPW 32
@@ -134,6 +108,8 @@ void connection() {
     server_addr.sin_addr.s_addr = inet_addr(SERVER_ADDRESS);
     server_addr.sin_family      = AF_INET;
     server_addr.sin_port        = htons(SERVER_PORT); 
+
+ 
 
     // initiate a connection on the socket
     ret = connect(socket_desc, (struct sockaddr*) &server_addr, sizeof(struct sockaddr_in));
@@ -195,45 +171,38 @@ void connection() {
             if (ret == -1) handle_error("Cannot write to the socket");
             bytes_sent += ret;
         }
-        //if (DEBUG) fprintf(stderr, "Inviato!!!!!!!!!...\n");
-        //if (DEBUG) fprintf(stderr, "Leggendo risposta del server...\n");
         }
         memset(buf, 0, buf_len);
 	    // read message from server
 	    recv_bytes = 0;
     	do {
             ret = recv(socket_desc, buf + recv_bytes, 1, 0);
-
             if (ret == -1 && errno == EINTR) continue;
             if (ret == -1) handle_error("Cannot read from the socket");
 	        if (ret == 0) break;
 	        recv_bytes += ret;
-
 	    } while ( buf[recv_bytes-1] != '\n' );
-        
-        //if (DEBUG) fprintf(stderr, "Leggendo risposta del server...%s and n of bytes %d\n", buf, ret);
-
         // server response
-        printf("%s\n", buf); // no need to insert '\0'
-        //printf("%d\n", ret);
-        //printf("%s\n", buf);
-        
-        
-    }
-    
+        printf("%s\n", buf); // no need to insert '\0'     
 
+        if (!memcmp(buf, "Lista di tutti gli utenti: \n", strlen("Lista di tutti gli utenti: \n"))){   
+            break;
+        }
+    }
+    // prima di chiudere il socket tcp mi salvo l'indirizzo del server
+    memcpy((struct sockaddr*)&(server_addr_udp),(struct sockaddr*)(&server_addr), sizeof(struct sockaddr_in));
+    //server_addr_udp = server_addr;
+    if (DEBUG) fprintf(stderr, "Porta server quando passo la struttura: %d\n", server_addr.sin_port);
+    if (DEBUG) fprintf(stderr, "Porta server quando passo la struttura: %d\n", server_addr_udp.sin_port);
+       
+    
     // close the socket
     ret = close(socket_desc);
     if(ret) handle_error("Cannot close socket");
-
-    if (DEBUG) fprintf(stderr, "Exiting...\n");
-
+    
+    return;
 }
 
-// uso protocollo TCP per la registrazione
-void registrazione(){
-
-}
 /* read a string from fp into pw masking keypress with mask char.
 getpasswd will read upto sz - 1 chars into pw, null-terminating
 the resulting string. On success, the number of characters in
