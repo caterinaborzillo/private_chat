@@ -19,7 +19,7 @@ char message[MAXSIZE];
 char buf[MAXSIZE];
 int message_length;
 int ret;
-struct sockaddr_in from_addr;
+struct sockaddr_in from_addr = {0};
 unsigned int from_size;
 char* quit_command = SERVER_COMMAND;
 int quit_command_len = strlen(SERVER_COMMAND);
@@ -35,7 +35,14 @@ char *p = pw;
 ssize_t getpasswd (char **pw, size_t sz, int mask, FILE *fp);
 
 void invio_ricezione_messaggi(struct sockaddr_in server_addr_udp, int sock);
+void invio(struct sockaddr_in server_addr_udp, int sock);
+void ricezione(struct sockaddr_in server_addr_udp, int sock);
 
+
+typedef struct handler_args_s {
+     struct sockaddr_in server_addr_udp;
+     int sock;
+} handler_args_t;
 
 void invio_ricezione_messaggi(struct sockaddr_in server_addr_udp, int sock){
     if (DEBUG) fprintf(stderr, "Pronto thread disponibile a mandare messaggi\n");
@@ -67,7 +74,40 @@ void invio_ricezione_messaggi(struct sockaddr_in server_addr_udp, int sock){
     return;
 }
 
+void invio(struct sockaddr_in server_addr_udp, int sock){
+    if (DEBUG) fprintf(stderr, "Pronto processo disponibile a mandare messaggi\n");
+    while(1){
+        if (DEBUG) fprintf(stderr, "porta PRIMA della send (in attesa della fgets) %d\n", server_addr_udp.sin_port);
+        memset(message, 0, MAXSIZE);
+        fgets(message, MAXSIZE, stdin);
+        if ((message_length = strlen(message)) > MAXSIZE) handle_error("messaggio troppo lungo");
 
+    // invio messaggi al server
+    ret = sendto(sock, message, message_length, 0, ( struct sockaddr*) &server_addr_udp, sizeof(server_addr_udp));
+    if (ret != message_length) handle_error("sendto errore messaggio troppo lungo\n");
+    if (DEBUG) fprintf(stderr, "porta DOPO la send %d\n", server_addr_udp.sin_port);
+    }
+}
+
+void ricezione(struct sockaddr_in server_addr_udp, int sock){
+    if (DEBUG) fprintf(stderr, "Pronto processo disponibile a ricevere messaggi\n");
+    while(1){
+        // ricezione messaggi
+    from_size = sizeof(from_addr);
+    memset(buf, 0, MAXSIZE);
+
+    if (DEBUG) fprintf(stderr, "porta server PRIMA la recvfrom: %d\n", server_addr_udp.sin_port);
+    if (DEBUG) fprintf(stderr, "porta server PRIMA la recvfrom: %d\n", server_addr_udp.sin_addr.s_addr);
+
+    ret = recvfrom(sock, buf, MAXSIZE, 0, ( struct sockaddr*) &from_addr, &from_size);
+    if (DEBUG) fprintf(stderr, "porta server DOPO la dopo recvfrom: %d\n", server_addr_udp.sin_port);
+    // controllo 
+    if (server_addr_udp.sin_addr.s_addr != from_addr.sin_addr.s_addr) handle_error("messaggio ricevuto da una sorgente ignota");
+    buf[ret] = '\0';
+    printf("Received: %s\n", buf);
+
+    }
+}
 
 
 
@@ -76,12 +116,30 @@ int main(int args, char* argv[]) {
     // registrazione - login 
     connection();
 
-    int sock;
-    sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    if (sock < 0) handle_error("creazione socket client fallita");
-    ret = bind(sock, (struct sockaddr*) &server_addr_udp, sizeof(struct sockaddr_in));
-    invio_ricezione_messaggi(server_addr_udp, sock);
-    ret = close(sock);
+    
+    pid_t pid = fork();
+         if (pid < 0) handle_error("errore nella fork");
+         else if (pid == 0) {
+             int sock;
+            sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+            if (sock < 0) handle_error("creazione socket client fallita");
+            if (DEBUG) fprintf(stderr, "Porta server prima di chiamare ricezione(): %d\n", server_addr_udp.sin_port);
+             ricezione( server_addr_udp, sock);
+             if (DEBUG) fprintf(stderr, "The request has been handled...\n");
+             ret = close(sock);
+             _exit(EXIT_SUCCESS);
+         }
+         else { 
+                int sock;
+                sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+                 if (sock < 0) handle_error("creazione socket client fallita");
+                if (DEBUG) fprintf(stderr, "Porta server prima di chiamare invio(): %d\n", server_addr_udp.sin_port);
+                invio(server_addr_udp, sock);
+                if (DEBUG) fprintf(stderr, "A child process has been created...\n");
+                ret = close(sock);
+                }
+    //invio_ricezione_messaggi(server_addr_udp, sock);
+    
     if (ret) handle_error("Cannot close socket");
 
     return 0;

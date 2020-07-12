@@ -57,24 +57,28 @@ void ricezione_invio_messaggi(struct sockaddr_in client_address, int sock) {
                         if (DEBUG) fprintf(stderr, "Destinatario: %s\n", dest);
                         if (DEBUG) fprintf(stderr, "Bytes dest: %ld \n", strlen(dest));
                         free(temp);                       
-                        if (DEBUG) fprintf(stderr, "z: %d \n", z);                      
+                        //if (DEBUG) fprintf(stderr, "z: %d \n", z);                      
                 } else {
                     if(p[ strlen(p) - 1]== '\n'){
                         char* temp = malloc(strlen(p));
                         memcpy(temp, p, strlen(p)-1);
                         memcpy(message, temp, strlen(temp));
-                        if (DEBUG) fprintf(stderr, "z: %d \n", z);                      
+                        //if (DEBUG) fprintf(stderr, "z: %d \n", z);                      
                         free(temp);
                         if (DEBUG) fprintf(stderr, "Resto del messaggio: %s \n", message);
                     }
         l =  List_find(&addresses,dest);
-        if (DEBUG) fprintf(stderr, "ok\n");
+        if (DEBUG) fprintf(stderr, "ok, sono dopo Listfind\n");
+        if (DEBUG) fprintf(stderr, "struttura trovata: %d, %s\n", l->c_addr.sin_port, l->username_addr);
+
 
         if (l != 0 ) {
-            if (DEBUG) fprintf(stderr, "ok destinatario online trovato\n");
+            if (DEBUG) fprintf(stderr, "ok, destinatario online trovato\n");
             ret = sendto(sock, buf, strlen(buf), 0, (const struct sockaddr*) &(l->c_addr), sizeof(l->c_addr));
             if (ret != strlen(buf)) handle_error("Errore, messaggio troppo lungo");
             if (DEBUG) fprintf(stderr, "dopo la sendto\n");
+            if (DEBUG) fprintf(stderr, "porta a cui ho inviato il messaggio: %d \n", (l->c_addr).sin_port);
+            if (DEBUG) fprintf(stderr, "indirizzo a cui ho inviato il messaggio: %d \n", (l->c_addr).sin_addr.s_addr);
             } else {
                 if (DEBUG) fprintf(stderr, "mess non inviato");
 
@@ -85,9 +89,11 @@ void ricezione_invio_messaggi(struct sockaddr_in client_address, int sock) {
     }
     }
 }
-void udp_server_routine(struct sockaddr_in client_address, int sock) {
+void udp_server_routine(struct sockaddr_in* client_address, int sock) {
     // devo gestire la ricezione dei messaggi 
     if (DEBUG) fprintf(stderr, "Inizio server UDP\n");
+    int ret=0;
+    
         //printf(buf, "es. paolo: ciao paolo!");
         //printf(buf, "Per specificare il destinatario del messaggio scrivilo come prima parola seguito dai due punti ':' es. paolo: ciao paolo!");
         //ret = sendto(sock, buf, recv_mess_size, 0, (struct sockaddr *) &client_address, sizeof(client_address));
@@ -95,15 +101,19 @@ void udp_server_routine(struct sockaddr_in client_address, int sock) {
 
     // to parse the ip address of the client and the port number of the client
     char client_ip[INET_ADDRSTRLEN];
-    inet_ntop(AF_INET, &(client_address.sin_addr), client_ip, INET_ADDRSTRLEN);
+    inet_ntop(AF_INET, &(client_address->sin_addr), client_ip, INET_ADDRSTRLEN);
     //uint16_t client_port = ntohs(client_address.sin_addr);
-
+    memset(buf, 0, strlen(buf));
+    printf(buf, "ciao sono il server COME VA?");
+    ListAddress* l = List_find(&addresses,"cat");
+    ret = sendto(sock, buf, strlen(buf), 0, (struct sockaddr *) &(l->c_addr), sizeof(l->c_addr));
+    if (ret != strlen(buf)) handle_error("Errore, messaggio troppo lungo");
     // loop per gestire incoming connections
     //while(1) {
         //memset(buf, 0, MAXSIZE);
         //sockaddr_len = sizeof(client_address);
         //recv_mess_size = recvfrom(sock, buf, MAXSIZE, 0, (struct sockaddr*) &client_address, (unsigned int*)&sockaddr_len);
-        ricezione_invio_messaggi(client_address, sock);
+        ricezione_invio_messaggi(*(client_address), sock);
 
 
         printf("INVIO MESSAGGIO ESEGUITO. %s\n", buf);
@@ -122,7 +132,7 @@ void udp_server_routine(struct sockaddr_in client_address, int sock) {
     return;
 }
 
-void udp_server_connection(struct sockaddr_in client_address) {
+void udp_server_connection(struct sockaddr_in* client_address) {
     // dopo registrazione e login c'è questo thread che si occupa di gestire l'invio e la ricezione dei messaggi
     // voglio iniziare connessione UDP
     int sock;
@@ -231,7 +241,7 @@ void serialServer(int server_desc) {
         if (pthread_create(&thread, NULL, (void*)udp_server_connection, (void*)&(addr_new->c_addr)) == -1 ) handle_error("errore nella pthread create");
         if (DEBUG) fprintf(stderr, "A new thread has been created to handle the messages request...\n");
 
-        } else udp_server_routine((addr_new->c_addr), udp_server);
+        } else udp_server_routine(&(addr_new->c_addr), udp_server);
 
         // reset fields in client_addr, perchè ad ogni while accetto connessioni da client diversi
         memset(&client_addr, 0, sizeof(struct sockaddr_in));
@@ -562,7 +572,7 @@ ListAddress* List_find(ListAddress_Head* head, char* username) {
     ListAddress* l = head->first;
     while(l){     
         if (DEBUG) fprintf(stderr, "l->username_addr: %s, username da trovare: %s\n", l->username_addr, username);
-        if (memcmp(l->username_addr,username, strlen(username))) {
+        if (memcmp(l->username_addr,username, strlen(username))==0) {
             return l;
             if (DEBUG) fprintf(stderr, "(list find) %s\n", l->username_addr);
         }
