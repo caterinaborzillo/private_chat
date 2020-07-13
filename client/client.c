@@ -11,6 +11,7 @@
 #include <termios.h>
 #include <pthread.h>
 #include <fcntl.h>
+#include <sys/select.h>
 
 #define MAXPW 32
 int sock;
@@ -47,10 +48,28 @@ void ricezione(void* arg);
 
 
 void invio_ricezione_messaggi(struct sockaddr_in server_addr_udp, int sock){
+    fd_set original_socket;
+    fd_set original_stdin;
+    fd_set readfds;
+    struct timeval tv;
+    int numfd;
+
+    // clear the set ahead of time
+    FD_ZERO(&original_socket);
+    FD_ZERO(&original_stdin);
+    FD_ZERO(&readfds);
+    // add our descriptors to the set (0 - stands for STDIN)
+    FD_SET(sock, &original_socket);//instead of 0 put socket_fd
+    FD_SET(sock, &readfds);
+    FD_SET(0,&original_stdin);
+    numfd=sock+1;
+
+    // wait until either socket has data ready to be recv()d (timeout 10.5 secs)
+    tv.tv_sec = 1;
+    tv.tv_usec = 1000000;
+
     if (DEBUG) fprintf(stderr, "Pronto thread disponibile a mandare messaggi\n");
     if (DEBUG) fprintf(stderr, "Pronto thread disponibile a ricevere messaggi\n");
-    while(1) {
-    
     memset(message, 0, MAXSIZE);
     fgets(message, MAXSIZE, stdin);
     if (DEBUG) fprintf(stderr, "porta in send %d\n", server_addr_udp.sin_port);
@@ -59,20 +78,43 @@ void invio_ricezione_messaggi(struct sockaddr_in server_addr_udp, int sock){
     // invio messaggi al server
     ret = sendto(sock, message, message_length, 0, ( struct sockaddr*) &server_addr_udp, sizeof(server_addr_udp));
     if (ret != message_length) handle_error("sendto errore messaggio troppo lungo\n");
-    
-    // ricezione messaggi
-    from_size = sizeof(from_addr);
-    memset(buf, 0, MAXSIZE);
 
-    ret = recvfrom(sock, buf, MAXSIZE, 0, ( struct sockaddr*) &from_addr, &from_size);
-    if (DEBUG) fprintf(stderr, "dopo recvfrom!\n");
-    // controllo 
-    if (server_addr_udp.sin_addr.s_addr != from_addr.sin_addr.s_addr) handle_error("messaggio ricevuto da una sorgente ignota");
-    buf[ret] = '\0';
-    printf("Received: %s\n", buf);
 
+    while(1) {
+    readfds = original_socket;
+
+
+    int recieve = select(numfd, &readfds, NULL, NULL, &tv);
+    if (recieve == -1) perror("select");  // error occurred in select() 
+    //else if (recieve == 0)  printf("Timeout occurred! No data after 30.5 seconds.\n"); 
+    else {
+        // one descritpor have data
+        if (FD_ISSET(sock, &readfds)) { // if set to read
+            FD_CLR(sock, &readfds); // clear the set 
+            // ricezione messaggi
+            from_size = sizeof(from_addr);
+            memset(buf, 0, MAXSIZE);
+            ret = recvfrom(sock, buf, MAXSIZE, 0, ( struct sockaddr*) &from_addr, &from_size);
+            if (DEBUG) fprintf(stderr, "Ho ricevuto un messaggio.\n");
+            // controllo 
+            if (server_addr_udp.sin_addr.s_addr != from_addr.sin_addr.s_addr) handle_error("messaggio ricevuto da una sorgente ignota");
+            buf[ret] = '\0';
+            printf("Received: %s\n", buf);
+        } else {
+            
+            memset(message, 0, MAXSIZE);
+            fgets(message, MAXSIZE, stdin);
+            if (DEBUG) fprintf(stderr, "porta in send %d\n", server_addr_udp.sin_port);
+            if ((message_length = strlen(message)) > MAXSIZE) handle_error("messaggio troppo lungo");
+
+            // invio messaggi al server
+            ret = sendto(sock, message, message_length, 0, ( struct sockaddr*) &server_addr_udp, sizeof(server_addr_udp));
+            if (ret != message_length) handle_error("sendto errore messaggio troppo lungo\n");
+        }
+         
+        }
     }
-    
+    close(sock);
     return;
 }
 
@@ -159,10 +201,20 @@ int main(int args, char* argv[]) {
 
     // registrazione - login 
     connection();
+    int sock;
+    sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (sock < 0) handle_error("creazione socket client fallita");
+    int status = fcntl(sock, F_SETFL, fcntl(sock, F_GETFL, 0) | O_NONBLOCK);
+
+    if (status == -1){
+    perror("calling fcntl");
+  // handle the error.  By the way, I've never seen fcntl fail in this way
+}
+    invio_ricezione_messaggi(server_addr_udp, sock);
     ret = close(sock);
     if (ret) handle_error("Cannot close socket");
 
-
+    return 0;
 }
 
 #define MAXPW 32
@@ -270,6 +322,7 @@ void connection() {
     //server_addr_udp = server_addr;
     //if (DEBUG) fprintf(stderr, "Porta server quando passo la struttura: %d\n", server_addr.sin_port);
     if (DEBUG) fprintf(stderr, "Porta server quando passo la struttura: %d\n", server_addr_udp.sin_port);
+    /*
     if (i==0) {
         udp_handler(socket_desc);
     }
@@ -280,9 +333,11 @@ void connection() {
         invio(arg);
         ricezione(arg);
     }
-    // close the socket
+    */
+        // close the socket
     ret = close(socket_desc);
     if(ret) handle_error("Cannot close socket");
+
     
     return;
 
