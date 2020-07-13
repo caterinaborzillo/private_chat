@@ -10,11 +10,12 @@
 #include <unistd.h>
 #include <termios.h>
 #include <pthread.h>
+#include <fcntl.h>
 
 #define MAXPW 32
+int sock;
 int socket1;
 int socket2;
-int sock;
 char message[MAXSIZE];
 char buf[MAXSIZE];
 int message_length;
@@ -25,24 +26,25 @@ char* quit_command = SERVER_COMMAND;
 int quit_command_len = strlen(SERVER_COMMAND);
 int k=0;
 struct sockaddr_in server_addr_udp = {0};
-
+int i=0;
 char buf2[FIELDSIZE];
 int n = 0;
 ssize_t nchr = 0;
 char pw[MAXPW] = {0};
 char *p = pw;
 
-ssize_t getpasswd (char **pw, size_t sz, int mask, FILE *fp);
-
-void invio_ricezione_messaggi(struct sockaddr_in server_addr_udp, int sock);
-void invio(struct sockaddr_in server_addr_udp, int sock);
-void ricezione(struct sockaddr_in server_addr_udp, int sock);
-
-
-typedef struct handler_args_s {
+typedef struct handler_args_s
+{
      struct sockaddr_in server_addr_udp;
      int sock;
 } handler_args_t;
+
+ssize_t getpasswd (char **pw, size_t sz, int mask, FILE *fp);
+
+void invio_ricezione_messaggi(struct sockaddr_in server_addr_udp, int sock);
+void invio(void*arg);
+void ricezione(void* arg);
+
 
 void invio_ricezione_messaggi(struct sockaddr_in server_addr_udp, int sock){
     if (DEBUG) fprintf(stderr, "Pronto thread disponibile a mandare messaggi\n");
@@ -74,75 +76,93 @@ void invio_ricezione_messaggi(struct sockaddr_in server_addr_udp, int sock){
     return;
 }
 
-void invio(struct sockaddr_in server_addr_udp, int sock){
-    if (DEBUG) fprintf(stderr, "Pronto processo disponibile a mandare messaggi\n");
-    while(1){
-        if (DEBUG) fprintf(stderr, "porta PRIMA della send (in attesa della fgets) %d\n", server_addr_udp.sin_port);
+void invio(void* arg){
+    handler_args_t *args = (handler_args_t*)arg;
+
+    if (DEBUG) fprintf(stderr, "Pronto thread disponibile a mandare messaggi\n");
+    int i = 0;
+    while(i){
+        if (DEBUG) fprintf(stderr, "porta PRIMA della send (in attesa della fgets) %d\n", args->server_addr_udp.sin_port);
         memset(message, 0, MAXSIZE);
         fgets(message, MAXSIZE, stdin);
         if ((message_length = strlen(message)) > MAXSIZE) handle_error("messaggio troppo lungo");
-
+        
     // invio messaggi al server
-    ret = sendto(sock, message, message_length, 0, ( struct sockaddr*) &server_addr_udp, sizeof(server_addr_udp));
+    ret = sendto(args->sock, message, message_length, 0, ( struct sockaddr*) &(args->server_addr_udp), sizeof(args->server_addr_udp));
     if (ret != message_length) handle_error("sendto errore messaggio troppo lungo\n");
-    if (DEBUG) fprintf(stderr, "porta DOPO la send %d\n", server_addr_udp.sin_port);
+
+    if ((ret == quit_command_len) && !memcmp(buf, quit_command, quit_command_len)) break;
+
+    if (DEBUG) fprintf(stderr, "porta DOPO la send %d\n", args->server_addr_udp.sin_port);
+    i++;
     }
+    ret = close(args->sock);
+    if(ret) handle_error("Cannot close socket for incoming connection");
 }
 
-void ricezione(struct sockaddr_in server_addr_udp, int sock){
-    if (DEBUG) fprintf(stderr, "Pronto processo disponibile a ricevere messaggi\n");
+void ricezione(void* arg){
+    
+    handler_args_t *args = (handler_args_t*)arg;
+
+    FILE* f;
+    if (DEBUG) fprintf(stderr, "Pronto thread disponibile a ricevere messaggi\n");
     while(1){
         // ricezione messaggi
     from_size = sizeof(from_addr);
     memset(buf, 0, MAXSIZE);
 
-    if (DEBUG) fprintf(stderr, "porta server PRIMA la recvfrom: %d\n", server_addr_udp.sin_port);
-    if (DEBUG) fprintf(stderr, "porta server PRIMA la recvfrom: %d\n", server_addr_udp.sin_addr.s_addr);
+    if (DEBUG) fprintf(stderr, "porta server PRIMA la recvfrom: %d\n", args->server_addr_udp.sin_port);
+    if (DEBUG) fprintf(stderr, "indirizzo server PRIMA la recvfrom: %d\n", args->server_addr_udp.sin_addr.s_addr);
+    
+    ret = recvfrom(args->sock, buf, MAXSIZE, 0, ( struct sockaddr*) &from_addr, &from_size);
+    /*f = fopen("Mmessaggi.txt", "a+");
+    if (f == NULL) {
+            handle_error("Impossibile aprire il file");
+        }
+    fprintf(f, "%s\n", buf);
+    */
 
-    ret = recvfrom(sock, buf, MAXSIZE, 0, ( struct sockaddr*) &from_addr, &from_size);
-    if (DEBUG) fprintf(stderr, "porta server DOPO la dopo recvfrom: %d\n", server_addr_udp.sin_port);
+    if (DEBUG) fprintf(stderr, "porta server DOPO la dopo recvfrom: %d\n", args->server_addr_udp.sin_port);
     // controllo 
-    if (server_addr_udp.sin_addr.s_addr != from_addr.sin_addr.s_addr) handle_error("messaggio ricevuto da una sorgente ignota");
+    if (args->server_addr_udp.sin_addr.s_addr != from_addr.sin_addr.s_addr) handle_error("messaggio ricevuto da una sorgente ignota");
     buf[ret] = '\0';
     printf("Received: %s\n", buf);
-
+    
     }
+    //fclose(f);
 }
 
+void udp_handler(int socket_d) {
+        
+        sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+        if (sock < 0) handle_error("creazione socket client fallita");
+        int status = fcntl(sock, F_SETFL, fcntl(sock, F_GETFL, 0) | O_NONBLOCK);
 
+        if (status == -1){
+        perror("calling fcntl");
+        }
+
+        pthread_t t1,t2;
+        handler_args_t* arg = malloc(sizeof(handler_args_t));
+        arg->sock = sock;
+        arg->server_addr_udp = server_addr_udp;
+        if (pthread_create(&t1, NULL, (void*)ricezione, arg)== -1 ) handle_error("errore nella pthread create");
+        if (pthread_create(&t2, NULL, (void*)invio, arg) == -1 ) handle_error("errore nella pthread create");
+        i++;
+    //invio_ricezione_messaggi(server_addr_udp, socket_client);
+        if (pthread_join(t1, NULL) !=0) handle_error("Errore nella join");
+        if (pthread_join(t2, NULL) !=0) handle_error("Errore nella join");
+    return ;
+}
 
 int main(int args, char* argv[]) {
 
     // registrazione - login 
     connection();
-
-    
-    pid_t pid = fork();
-         if (pid < 0) handle_error("errore nella fork");
-         else if (pid == 0) {
-             int sock;
-            sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-            if (sock < 0) handle_error("creazione socket client fallita");
-            if (DEBUG) fprintf(stderr, "Porta server prima di chiamare ricezione(): %d\n", server_addr_udp.sin_port);
-             ricezione( server_addr_udp, sock);
-             if (DEBUG) fprintf(stderr, "The request has been handled...\n");
-             ret = close(sock);
-             _exit(EXIT_SUCCESS);
-         }
-         else { 
-                int sock;
-                sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-                 if (sock < 0) handle_error("creazione socket client fallita");
-                if (DEBUG) fprintf(stderr, "Porta server prima di chiamare invio(): %d\n", server_addr_udp.sin_port);
-                invio(server_addr_udp, sock);
-                if (DEBUG) fprintf(stderr, "A child process has been created...\n");
-                ret = close(sock);
-                }
-    //invio_ricezione_messaggi(server_addr_udp, sock);
-    
+    ret = close(sock);
     if (ret) handle_error("Cannot close socket");
 
-    return 0;
+
 }
 
 #define MAXPW 32
@@ -166,8 +186,6 @@ void connection() {
     server_addr.sin_addr.s_addr = inet_addr(SERVER_ADDRESS);
     server_addr.sin_family      = AF_INET;
     server_addr.sin_port        = htons(SERVER_PORT); 
-
- 
 
     // initiate a connection on the socket
     ret = connect(socket_desc, (struct sockaddr*) &server_addr, sizeof(struct sockaddr_in));
@@ -250,15 +268,24 @@ void connection() {
     // prima di chiudere il socket tcp mi salvo l'indirizzo del server
     memcpy((struct sockaddr*)&(server_addr_udp),(struct sockaddr*)(&server_addr), sizeof(struct sockaddr_in));
     //server_addr_udp = server_addr;
-    if (DEBUG) fprintf(stderr, "Porta server quando passo la struttura: %d\n", server_addr.sin_port);
+    //if (DEBUG) fprintf(stderr, "Porta server quando passo la struttura: %d\n", server_addr.sin_port);
     if (DEBUG) fprintf(stderr, "Porta server quando passo la struttura: %d\n", server_addr_udp.sin_port);
-       
-    
+    if (i==0) {
+        udp_handler(socket_desc);
+    }
+    else {
+        handler_args_t* arg = malloc(sizeof(handler_args_t));
+        arg->sock = sock;
+        arg->server_addr_udp = server_addr_udp;
+        invio(arg);
+        ricezione(arg);
+    }
     // close the socket
     ret = close(socket_desc);
     if(ret) handle_error("Cannot close socket");
     
     return;
+
 }
 
 /* read a string from fp into pw masking keypress with mask char.

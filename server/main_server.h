@@ -43,6 +43,7 @@ typedef struct ListAddress {
     struct ListAddress* next;
     struct sockaddr_in c_addr;
     char* username_addr;
+    char* user_pass;
 } ListAddress;
 
 typedef struct ListAddress_Head {
@@ -56,4 +57,6 @@ ListAddress* List_find(ListAddress_Head* head, char* username);
 ListAddress* List_insert(ListAddress_Head* head, ListAddress* prevoius, ListAddress* addr);
 ListAddress* List_detach(ListAddress_Head* head, ListAddress* addr);
  void ListAddr_print(ListAddress_Head* head);
-
+ ListAddress* List_find_by_addr(ListAddress_Head* head, struct sockaddr_in clientaddress);
+ListAddress* List_findby_password(ListAddress_Head* head, char* password);
+char* search_password(char* username);
