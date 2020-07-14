@@ -33,6 +33,8 @@ int n = 0;
 ssize_t nchr = 0;
 char pw[MAXPW] = {0};
 char *p = pw;
+pthread_mutex_t lock;
+
 
 typedef struct handler_args_s
 {
@@ -43,7 +45,7 @@ typedef struct handler_args_s
 ssize_t getpasswd (char **pw, size_t sz, int mask, FILE *fp);
 
 void invio_ricezione_messaggi(struct sockaddr_in server_addr_udp, int sock);
-void invio(void*arg);
+void invio(void* arg);
 void ricezione(void* arg);
 
 
@@ -120,11 +122,11 @@ void invio_ricezione_messaggi(struct sockaddr_in server_addr_udp, int sock){
 
 void invio(void* arg){
     handler_args_t *args = (handler_args_t*)arg;
-
     if (DEBUG) fprintf(stderr, "Pronto thread disponibile a mandare messaggi\n");
     int i = 0;
-    while(i){
-        if (DEBUG) fprintf(stderr, "porta PRIMA della send (in attesa della fgets) %d\n", args->server_addr_udp.sin_port);
+    while(1){
+        
+        if (DEBUG) fprintf(stderr, "porta PRIMA della send (in attesa della fgets) %d\n", server_addr_udp.sin_port);
         memset(message, 0, MAXSIZE);
         fgets(message, MAXSIZE, stdin);
         if ((message_length = strlen(message)) > MAXSIZE) handle_error("messaggio troppo lungo");
@@ -138,8 +140,10 @@ void invio(void* arg){
     if (DEBUG) fprintf(stderr, "porta DOPO la send %d\n", args->server_addr_udp.sin_port);
     i++;
     }
-    ret = close(args->sock);
-    if(ret) handle_error("Cannot close socket for incoming connection");
+    //free(args->server_addr_udp);
+    free(args);
+    //ret = close(args->sock);
+    //if(ret) handle_error("Cannot close socket for incoming connection");
 }
 
 void ricezione(void* arg){
@@ -157,12 +161,6 @@ void ricezione(void* arg){
     if (DEBUG) fprintf(stderr, "indirizzo server PRIMA la recvfrom: %d\n", args->server_addr_udp.sin_addr.s_addr);
     
     ret = recvfrom(args->sock, buf, MAXSIZE, 0, ( struct sockaddr*) &from_addr, &from_size);
-    /*f = fopen("Mmessaggi.txt", "a+");
-    if (f == NULL) {
-            handle_error("Impossibile aprire il file");
-        }
-    fprintf(f, "%s\n", buf);
-    */
 
     if (DEBUG) fprintf(stderr, "porta server DOPO la dopo recvfrom: %d\n", args->server_addr_udp.sin_port);
     // controllo 
@@ -171,7 +169,6 @@ void ricezione(void* arg){
     printf("Received: %s\n", buf);
     
     }
-    //fclose(f);
 }
 
 void udp_handler(int socket_d) {
@@ -201,16 +198,63 @@ int main(int args, char* argv[]) {
 
     // registrazione - login 
     connection();
+
+    if (pthread_mutex_init(&lock, NULL) != 0) {
+        printf("\n mutex init failed\n");
+        return 1; }
+
     int sock;
     sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (sock < 0) handle_error("creazione socket client fallita");
     int status = fcntl(sock, F_SETFL, fcntl(sock, F_GETFL, 0) | O_NONBLOCK);
+    if (status == -1){ perror("calling fcntl"); }
+    fd_set original_socket;
+    fd_set readfds;
+    int numfd;
+    struct timeval tv;
+    FD_ZERO(&original_socket);
+    FD_ZERO(&readfds);
+    numfd=sock+1;
+    FD_SET(sock, &original_socket);//instead of 0 put socket_fd
+    FD_SET(sock, &readfds);
+    // wait until either socket has data ready to be recv()d (timeout 10.5 secs)
+    tv.tv_sec = 30;
+    tv.tv_usec = 30000000;
 
-    if (status == -1){
-    perror("calling fcntl");
-  // handle the error.  By the way, I've never seen fcntl fail in this way
-}
-    invio_ricezione_messaggi(server_addr_udp, sock);
+    pthread_t t;
+    handler_args_t* arg = malloc(sizeof(handler_args_t));
+    arg->sock = sock;
+    arg->server_addr_udp = server_addr_udp;
+    if (pthread_create(&t, NULL, (void*)invio, arg) == -1 ) handle_error("errore nella pthread create");
+    if (DEBUG) fprintf(stderr, "Thread started..\n");
+    //invio_ricezione_messaggi(server_addr_udp, sock);
+
+
+    while(1) {
+        readfds = original_socket;
+        int recieve = select(numfd, &readfds, NULL, NULL, &tv);
+        if (recieve == -1) perror("select");  // error occurred in select() 
+        //else if (recieve == 0)  printf("Timeout occurred! No data after 30.5 seconds.\n"); 
+        else {
+            // one descritpor have data
+            if (FD_ISSET(sock, &readfds)) { // if set to read
+            pthread_mutex_lock(&lock);
+            FD_CLR(sock, &readfds); // clear the set 
+            // ricezione messaggi
+            from_size = sizeof(from_addr);
+            memset(buf, 0, MAXSIZE);
+            ret = recvfrom(sock, buf, MAXSIZE, 0, ( struct sockaddr*) &from_addr, &from_size);
+            if (DEBUG) fprintf(stderr, "Ho ricevuto un messaggio.\n");
+            // controllo 
+            if (server_addr_udp.sin_addr.s_addr != from_addr.sin_addr.s_addr) handle_error("messaggio ricevuto da una sorgente ignota");
+            buf[ret] = '\0';
+            printf("Received: %s\n", buf);
+            pthread_mutex_unlock(&lock);
+        }
+        }
+    }
+    pthread_join(t, NULL);
+    pthread_mutex_destroy(&lock);
     ret = close(sock);
     if (ret) handle_error("Cannot close socket");
 
@@ -313,7 +357,7 @@ void connection() {
         // server response
         printf("%s\n", buf); // no need to insert '\0'     
 
-        if (!memcmp(buf, "Lista di tutti gli utenti: \n", strlen("Lista di tutti gli utenti: \n"))){   
+        if (!memcmp(buf, "Login terminated.\n", strlen("Login terminated.\n"))){   
             break;
         }
     }

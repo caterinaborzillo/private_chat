@@ -360,6 +360,7 @@ void send_tcp_message(char *buf, int socket_desc) {
     int bytes_sent=0;
             buf_len = strlen(buf);
             while(bytes_sent < buf_len) {
+    
                 ret = send(socket_desc, buf+bytes_sent, 1, 0);
                 if (ret == -1) {
                     if (errno == EINTR) continue;
@@ -396,21 +397,33 @@ void ListAddr_print(ListAddress_Head* head){
 }
 
 // funzione che stampa tutti gli utenti iscritti (per iniziare a messaggiare con uno di loro)
-void stampa_utenti(char* curr_username, int socket_desc, char* buf) {
+void stampa_utenti(char* curr_user, int socket_desc, char* buf) {
     memset(buf, 0, buf_len);
-            sprintf(buf, "Lista di tutti gli utenti: \n");
-            send_tcp_message(buf, socket_desc);
-   /* for (int j=0; j < n; j++) {
-        if (strcmp(user[j]->username, curr_username)!=0) {
-            memset(buf, 0, buf_len);
-            sprintf(buf, (char*)user[j]->username);
-            strcat(buf, "\n");
-            send_tcp_message(buf, socket_desc);
+    sprintf(buf, "Lista di tutti gli utenti: \n");
+    send_tcp_message(buf, socket_desc);
+    int j;
+    memset(buf, 0, buf_len);
+    sprintf(buf, "Login terminated.\n");
+    send_tcp_message(buf, socket_desc);
+    if (DEBUG) fprintf(stderr, "messaggio da inviare al client: %d ...\n",n);
+    for (j=0; j < n; j++) {
+        //if (DEBUG) fprintf(stderr, "currUser: %s ...\n",curr_user);
+        //if (DEBUG) fprintf(stderr, "Array User: %s ...\n",user[j]->username);
 
-        if (DEBUG) fprintf(stderr, "messaggio da inviare al client: %s ...\n",buf);
+        if (strcmp(user[j]->username, curr_user)!=0) {
+            //memset(buf, 0, buf_len);
+            //sprintf(buf, user[j]->username);
+            strcat((user[j]->username), "\n");
+            if (DEBUG) fprintf(stderr, "Print: %s ...\n",user[j]->username);
+
+            send_tcp_message(user[j]->username, socket_desc);
         }
     }
-    */
+        memset(buf, 0, buf_len);
+        sprintf(buf, "Login terminated.\n");
+        send_tcp_message(buf, socket_desc);
+        if (DEBUG) fprintf(stderr, "messaggio da inviare al client: %s ...\n",buf);
+    
    return;
 }
 
