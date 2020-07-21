@@ -5,4 +5,8 @@ Penny Borzillo,pennybo,pass3
 silvia borzillo,silviab,pass4
 gabri borzillo,gabri,pass5
 claudia cirpiani,cla,pass6
-anna clemente,anna,pass7
+marcello borzillo,marc,pass1
+elisabetta musy,betta,pass1
+Raffaela Iuliano,Raffi,Cate1998
+Riccardo Casciotti,Richi,ok
+Franco,F,ok

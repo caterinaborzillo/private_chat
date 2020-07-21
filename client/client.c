@@ -34,7 +34,8 @@ ssize_t nchr = 0;
 char pw[MAXPW] = {0};
 char *p = pw;
 pthread_mutex_t lock;
-
+char pass_global[MAXSIZE];
+int terminate = 0;
 
 typedef struct handler_args_s
 {
@@ -45,10 +46,10 @@ typedef struct handler_args_s
 ssize_t getpasswd (char **pw, size_t sz, int mask, FILE *fp);
 
 void invio_ricezione_messaggi(struct sockaddr_in server_addr_udp, int sock);
-void invio(void* arg);
+void* invio(void* arg);
 void ricezione(void* arg);
 
-
+// NO
 void invio_ricezione_messaggi(struct sockaddr_in server_addr_udp, int sock){
     fd_set original_socket;
     fd_set original_stdin;
@@ -120,22 +121,29 @@ void invio_ricezione_messaggi(struct sockaddr_in server_addr_udp, int sock){
     return;
 }
 
-void invio(void* arg){
+void* invio(void* arg){
     handler_args_t *args = (handler_args_t*)arg;
     if (DEBUG) fprintf(stderr, "Pronto thread disponibile a mandare messaggi\n");
     int i = 0;
-    while(1){
-        
+    // invio la pass_global
+     if (strlen(pass_global) > MAXSIZE) handle_error("messaggio troppo lungo");
+    ret = sendto(args->sock, pass_global, strlen(pass_global), 0, (struct sockaddr*) &(args->server_addr_udp), sizeof(args->server_addr_udp));
+    if (ret != strlen(pass_global)) handle_error("sendto errore messaggio troppo lungo\n");
+
+    while(1){       
         if (DEBUG) fprintf(stderr, "porta PRIMA della send (in attesa della fgets) %d\n", server_addr_udp.sin_port);
         memset(message, 0, MAXSIZE);
         fgets(message, MAXSIZE, stdin);
         if ((message_length = strlen(message)) > MAXSIZE) handle_error("messaggio troppo lungo");
-        
+
     // invio messaggi al server
     ret = sendto(args->sock, message, message_length, 0, ( struct sockaddr*) &(args->server_addr_udp), sizeof(args->server_addr_udp));
     if (ret != message_length) handle_error("sendto errore messaggio troppo lungo\n");
 
-    if ((ret == quit_command_len) && !memcmp(buf, quit_command, quit_command_len)) break;
+    if ((ret == quit_command_len) && !memcmp(message, quit_command, quit_command_len)){
+        terminate = 1;
+        break;
+    } 
 
     if (DEBUG) fprintf(stderr, "porta DOPO la send %d\n", args->server_addr_udp.sin_port);
     i++;
@@ -146,6 +154,7 @@ void invio(void* arg){
     //if(ret) handle_error("Cannot close socket for incoming connection");
 }
 
+// NO 
 void ricezione(void* arg){
     
     handler_args_t *args = (handler_args_t*)arg;
@@ -170,7 +179,7 @@ void ricezione(void* arg){
     
     }
 }
-
+// NO
 void udp_handler(int socket_d) {
         
         sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
@@ -225,12 +234,12 @@ int main(int args, char* argv[]) {
     handler_args_t* arg = malloc(sizeof(handler_args_t));
     arg->sock = sock;
     arg->server_addr_udp = server_addr_udp;
-    if (pthread_create(&t, NULL, (void*)invio, arg) == -1 ) handle_error("errore nella pthread create");
+    if (pthread_create(&t, NULL, invio, arg) == -1 ) handle_error("errore nella pthread create");
     if (DEBUG) fprintf(stderr, "Thread started..\n");
     //invio_ricezione_messaggi(server_addr_udp, sock);
-
-
-    while(1) {
+    
+    pthread_join(t, NULL);
+    while(!terminate) {
         readfds = original_socket;
         int recieve = select(numfd, &readfds, NULL, NULL, &tv);
         if (recieve == -1) perror("select");  // error occurred in select() 
@@ -244,16 +253,17 @@ int main(int args, char* argv[]) {
             from_size = sizeof(from_addr);
             memset(buf, 0, MAXSIZE);
             ret = recvfrom(sock, buf, MAXSIZE, 0, ( struct sockaddr*) &from_addr, &from_size);
-            if (DEBUG) fprintf(stderr, "Ho ricevuto un messaggio.\n");
+            //if (DEBUG) fprintf(stderr, "Ho ricevuto un messaggio.\n");
             // controllo 
             if (server_addr_udp.sin_addr.s_addr != from_addr.sin_addr.s_addr) handle_error("messaggio ricevuto da una sorgente ignota");
             buf[ret] = '\0';
-            printf("Received: %s\n", buf);
+            printf(" %s\n", buf);
             pthread_mutex_unlock(&lock);
         }
         }
     }
-    pthread_join(t, NULL);
+    
+    if( DEBUG )fprintf(stderr, "Sto terminando...");
     pthread_mutex_destroy(&lock);
     ret = close(sock);
     if (ret) handle_error("Cannot close socket");
@@ -314,8 +324,10 @@ void connection() {
             printf ("\n you entered   : %s  (%zu chars)\n", p, nchr);
             memcpy(buf, p, strlen(p)); // copio la password in buf
             //if (DEBUG) fprintf(stderr, "password p in buf da inviare al server: %s", buf);
-            buf[strlen(buf)] = '\n'; // remove '\n' from the end of the message
+            buf[strlen(buf)] = '\n'; 
             msg_len = strlen(buf);
+            memset(pass_global, 0, strlen(pass_global));
+            memcpy(pass_global, buf, strlen(buf));
             // send message to server
             bytes_sent=0;
             while ( bytes_sent < msg_len) {
@@ -357,7 +369,27 @@ void connection() {
         // server response
         printf("%s\n", buf); // no need to insert '\0'     
 
-        if (!memcmp(buf, "Login terminated.\n", strlen("Login terminated.\n"))){   
+        if ((!memcmp(buf, "Lista degli utenti online: \n", strlen("Lista degli utenti online: \n"))) ||
+        (!memcmp(buf, "Non ci sono utenti attualmente online!\n", strlen("Non ci sono utenti attualmente online!\n")))){   
+            
+            while(1) {
+                sleep(0.5);
+                memset(buf, 0, buf_len);
+	            // read message from server
+	            recv_bytes = 0;
+    	        do {
+                    ret = recv(socket_desc, buf + recv_bytes, 1, 0);
+                    if (ret == -1 && errno == EINTR) continue;
+                    if (ret == -1) handle_error("Cannot read from the socket");
+	                if (ret == 0) break;
+	                recv_bytes += ret;
+	            } while ( buf[recv_bytes-1] != '\n' );
+                // server response
+                printf("%s\n", buf); // no need to insert '\0'  
+
+                if (!memcmp(buf, "Per specificare il destinatario del messaggio scrivilo come prima parola seguito dai due punti ':' es. paolo: ciao paolo!\n", strlen("Per specificare il destinatario del messaggio scrivilo come prima parola seguito dai due punti ':' es. paolo: ciao paolo!\n")))
+                    break;
+            }
             break;
         }
     }
