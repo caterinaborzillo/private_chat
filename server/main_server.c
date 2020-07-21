@@ -50,7 +50,6 @@ void* ricezione_invio_messaggi(void* sock_id) {
         for (int i=0; i<n; i++) {
             if (DEBUG) fprintf(stderr, "user[%d]-> nome: %s \n", i, user[i]->nome);
         }   
-        int i = 0;
         dest=malloc(MAXSIZE);
         mittente=malloc(FIELDSIZE);
         struct sockaddr_in client_address_recv = {0};
@@ -69,8 +68,8 @@ void* ricezione_invio_messaggi(void* sock_id) {
         if (List_find_by_addr(&addresses, client_address_recv)){
             memcpy(&from_addr, &(client_address_recv), sizeof(from_addr));
             l = List_find_by_addr(&addresses, client_address_recv);
-            memset(mittente, 0, sizeof(mittente));
-            memcpy(mittente,l->username_addr, sizeof(mittente));
+            memset(mittente, 0, FIELDSIZE);
+            memcpy(mittente,l->username_addr, FIELDSIZE);
         }
         if (!strcmp(buf,"utenti online?\n")) {
             l = List_find_by_addr(&addresses, client_address_recv);
@@ -103,7 +102,8 @@ void* ricezione_invio_messaggi(void* sock_id) {
         p = strtok(buf, ":");
         while(p != NULL){
                 if (z==0) {
-                        char* temp = malloc(strlen(p));
+                        char* temp = calloc(strlen(p), 1);
+                        if (DEBUG) fprintf(stderr, "Destinatario sporco: %s", p);
                         memcpy(temp, p, strlen(p));
                         memset(dest, 0, strlen(dest));
                         memcpy(dest, temp, strlen(temp));
@@ -152,9 +152,6 @@ void* ricezione_invio_messaggi(void* sock_id) {
 
 
 void udp_server_connection() {    
-    int i = 0;
-
-
     if (DEBUG) fprintf(stderr, "INIZIO UDP\n");
     
     struct sockaddr_in server_addr_udp = {0};
@@ -180,7 +177,7 @@ void udp_server_connection() {
 
 // chiama serial_server (TCP)
 void connessione(){
-    int i = 0;
+
     int socket_desc;
 
     // some fields are required to be filled with 0
@@ -243,13 +240,13 @@ void serialServer(int server_desc) {
         if (DEBUG) fprintf(stderr, "Done! Registration/login terminated for %s.\n", curr_username);
         
         ListAddress* addr_new = (ListAddress*)malloc(sizeof(ListAddress));
-        char* pass;
         
         addr_new->username_addr = malloc(FIELDSIZE);
         addr_new->user_pass = malloc(FIELDSIZE);
-        addr_new->user_pass = search_password(curr_username);
+        //addr_new->user_pass = search_password(curr_username);
         //addr_new->c_addr = malloc(sizeof(struct sockaddr_in));
         //memcpy((addr_new->user_pass), pass, strlen(addr_new->user_pass));
+        memcpy(addr_new->user_pass, search_password(curr_username), FIELDSIZE);
         memcpy((addr_new->username_addr),&curr_username, FIELDSIZE);
 
         //printf("%s\n", inet_ntoa(client_addr.sin_addr));
@@ -257,7 +254,7 @@ void serialServer(int server_desc) {
         //if (DEBUG) fprintf(stderr, "curr_username: %s \n", curr_username);
 
         
-        ListAddress* res = List_insert(&addresses, addresses.last, addr_new);
+        List_insert(&addresses, addresses.last, addr_new);
         if (DEBUG) fprintf(stderr, "LIST INSERT\n");
         ListAddr_print(&addresses);
        
@@ -281,8 +278,7 @@ void serialServer(int server_desc) {
 }
 
 char* search_password(char* username) {
-     int i = 0;
-    char *password;
+    int i = 0;
     for(i=0; i<n; i++) {
         if ((memcmp(user[i]->username,username, strlen(username)))==0) {
             if (DEBUG) fprintf(stderr, "user[i]->password %s\n", user[i]->password);
@@ -302,7 +298,7 @@ int search_n(char* curr_username){
 }
 //client descriptor è il socket che il server ha creato per comunicare con quel preciso client che voleva connettersi 
 void connection_handler(int client_desc, struct sockaddr_in* client_addr) {
-     int i = 0;
+ 
 // connection handler
     int recv_bytes;
     char* reg_command = REGISTRAZIONE;
@@ -351,7 +347,6 @@ void connection_handler(int client_desc, struct sockaddr_in* client_addr) {
             registrazione(client_desc);
             // fine registrazione+login
         }
-        
         ret = close(client_desc);
         if(ret) handle_error("Cannot close socket for incoming connection");
 
@@ -360,7 +355,7 @@ void connection_handler(int client_desc, struct sockaddr_in* client_addr) {
     }
 
 void send_tcp_message(char *buf, int socket_desc) {
-     int i = 0;
+    
     int bytes_sent=0;
             buf_len = strlen(buf);
             while(bytes_sent < buf_len) {
@@ -376,7 +371,6 @@ void send_tcp_message(char *buf, int socket_desc) {
 
 void recv_tcp_message(char *buf, int socket_desc){
     memset(buf, 0, buf_len);
-     int i = 0;
     int recv_bytes = 0;
     int ret;
         while(buf[recv_bytes-1] != '\n') {
@@ -391,7 +385,6 @@ void recv_tcp_message(char *buf, int socket_desc){
 }
 
 void ListAddr_print(ListAddress_Head* head){
-     int i = 0;
   ListAddress* aux=head->first;
   printf("[");
   while(aux){
@@ -404,8 +397,7 @@ void ListAddr_print(ListAddress_Head* head){
 
 // funzione che stampa tutti gli utenti iscritti (per iniziare a messaggiare con uno di loro)
 void stampa_utenti_udp(ListAddress* curr_user, int socket) {
-    int i = 0;
-    int j;
+    int i=0;
     int sockaddr_len = 0;
     ListAddress* l = (&addresses)->first;
     while(l){
@@ -436,8 +428,7 @@ void stampa_utenti_udp(ListAddress* curr_user, int socket) {
 
 
 void stampa_utenti(char* curr_user, int socket_desc, char* buf) {
-    int i = 0;
-    int j;
+    int i=0;
     if (DEBUG) fprintf(stderr, "messaggio da inviare al client: %d ...\n",n);
     ListAddress* l = (&addresses)->first;
     while(l){
@@ -483,7 +474,7 @@ int database_research(char* username, char* password){
 
 // chiama login
 void registrazione(int socket_desc) {
-     int i = 0;
+     
             User* u = malloc(sizeof(User));
             u->nome = malloc(FIELDSIZE);
             u->username = malloc(FIELDSIZE);
@@ -562,7 +553,7 @@ void login(int socket_desc) {
         char* username = malloc(FIELDSIZE);
         char* password = malloc(FIELDSIZE);
         int recv_bytes = 0;
-        int k;
+        
         memset(buf, 0, buf_len);
         // username
         sprintf(buf, "Inserisci username: \n");     

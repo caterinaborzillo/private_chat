@@ -26,17 +26,8 @@ typedef struct User{
     char* nome;
     char* username;
     char* password;
-    void** chats;
 } User;
 
-typedef struct Messaggio{
-    char *text;
-} Messaggio;
-
-typedef struct Chat{
-    Messaggio **messaggi;
-    User* dest;
-} Chat;
 
 typedef struct ListAddress {
     struct ListAddress* prev;

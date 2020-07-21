@@ -1,9 +1,8 @@
-CC = gcc -Wall -g 
-
-all:  client 
+CC = gcc -Wall -g -pthread
 
 client: client.c client.h
 		$(CC) client.c client.h -o client
 
 
-#gcc client.c client.h -o client
+
+
