@@ -4,6 +4,3 @@ riccardo casciotti,richicas,pass2
 Penny Borzillo,pennybo,pass3
 silvia borzillo,silviab,pass4
 gabri borzillo,gabri,pass5
-claudia cirpiani,cla,pass6
-
-stefania rota,stefi,pass0

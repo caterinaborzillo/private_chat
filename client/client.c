@@ -34,7 +34,7 @@ ssize_t nchr = 0;
 char pw[MAXPW] = {0};
 char *p = pw;
 pthread_mutex_t lock;
-char pass_global[MAXSIZE];
+char pass_global[FIELDSIZE];
 int terminate = 0;
 
 typedef struct handler_args_s
@@ -49,10 +49,10 @@ void* invio(void* arg);
 
 void* invio(void* arg){
     handler_args_t *args = (handler_args_t*)arg;
-    if (DEBUG) fprintf(stderr, "Pronto thread disponibile a mandare messaggi\n");
+    //if (DEBUG) fprintf(stderr, "Pronto thread disponibile a mandare messaggi\n");
     int i = 0;
     // invio la pass_global
-     if (strlen(pass_global) > MAXSIZE) handle_error("messaggio troppo lungo");
+    if (strlen(pass_global) > MAXSIZE) handle_error("messaggio troppo lungo");
     ret = sendto(args->sock, pass_global, strlen(pass_global), 0, (struct sockaddr*) &(args->server_addr_udp), sizeof(args->server_addr_udp));
     if (ret != strlen(pass_global)) handle_error("sendto errore messaggio troppo lungo\n");
 
@@ -76,7 +76,7 @@ void* invio(void* arg){
 }
 
 int main(int args, char* argv[]) {
-
+    memset(pass_global, 0, FIELDSIZE);
     // registrazione - login 
     connection();
 
@@ -107,10 +107,7 @@ int main(int args, char* argv[]) {
     arg->sock = sock;
     arg->server_addr_udp = server_addr_udp;
     if (pthread_create(&t, NULL, invio, arg) == -1 ) handle_error("errore nella pthread create");
-    if (DEBUG) fprintf(stderr, "Thread started..\n");
     
-    //pthread_join(t, NULL);
-
     while(!terminate) {
         readfds = original_socket;
         int recieve = select(numfd, &readfds, NULL, NULL, &tv);
@@ -193,13 +190,13 @@ void connection() {
         if (!memcmp(buf, pass_mess, pass_mess_len)){
             memset(buf, 0, buf_len);
             nchr = getpasswd (&p, MAXPW, '*', stdin);
-            printf ("\n you entered   : %s  (%zu chars)\n", p, nchr);
+            printf ("\nhai inserito la password: %s  (%zu chars)\n", p, nchr);
             memcpy(buf, p, strlen(p)); // copio la password in buf
             //if (DEBUG) fprintf(stderr, "password p in buf da inviare al server: %s", buf);
             buf[strlen(buf)] = '\n'; 
             msg_len = strlen(buf);
-            memset(pass_global, 0, strlen(pass_global));
-            memcpy(pass_global, buf, strlen(buf));
+            memset(pass_global, 0, FIELDSIZE);
+            memcpy(pass_global, buf, FIELDSIZE);
             // send message to server
             bytes_sent=0;
             while ( bytes_sent < msg_len) {
@@ -260,7 +257,7 @@ void connection() {
                 // server response
                 printf("%s\n", buf); // no need to insert '\0'  
 
-                if (!memcmp(buf, "Per specificare il destinatario del messaggio scrivilo come prima parola seguito dai due punti ':' es. paolo: ciao paolo!\n", strlen("Per specificare il destinatario del messaggio scrivilo come prima parola seguito dai due punti ':' es. paolo: ciao paolo!\n")))
+                if (!memcmp(buf, "Per specificare il destinatario del messaggio scrivilo come prima parola seguito dai due punti ':' es. paolo: ciao paolo! Ora ti invierò la tua password per avere una conferma della tua identità. \n", strlen("Per specificare il destinatario del messaggio scrivilo come prima parola seguito dai due punti ':' es. paolo: ciao paolo! Ora ti invierò la tua password per avere una conferma della tua identità. \n")))
                     break;
             }
             break;
